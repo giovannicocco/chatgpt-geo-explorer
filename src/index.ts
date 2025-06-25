@@ -14,20 +14,14 @@ interface Environment {
   SA_PRIVATE_KEY: string; // Can be JSON string or just the private key
 }
 
-interface EarthEngineGeometry {
-  type: 'Point';
-  coordinates: [number, number];
+interface EarthEngineExpression {
+  values: Record<string, unknown>;
+  result: string;
 }
 
 interface EarthEngineRequestBody {
-  expression: {
-    function: string;
-    arguments: {
-      geometry: EarthEngineGeometry;
-      sensors: string[];
-    };
-  };
-  format: string;
+  expression: EarthEngineExpression;
+  workloadTag?: string;
 }
 
 interface GoogleOAuthTokenResponse {
@@ -104,19 +98,13 @@ export default {
       const token = await getAccessToken(clientEmail, privateKey);
 
       // Build request body for EE
-      const geometry: EarthEngineGeometry = {
-        type: 'Point',
-        coordinates: [lon, lat]
-      };
       const eeRequestBody: EarthEngineRequestBody = {
         expression: {
-          function: 'ANALYZE_SENSOR_DATA',
-          arguments: {
-            geometry,
-            sensors: ['NDVI', 'SRTM', 'VV']
-          }
-        },
-        format: 'json'
+          values: {
+            v0: { constantValue: 1 }
+          },
+          result: 'v0'
+        }
       };
 
       // Call Earth Engine compute endpoint
