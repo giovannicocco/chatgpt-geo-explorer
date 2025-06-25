@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: Geo Explorer API
+  version: 1.0.0
+  description: API for fetching geospatial sensor data including NDVI, SRTM, and satellite data.
+servers:
+  - url: https://geo-explorer.heg-business.workers.dev
+paths:
+  /sensor-data:
+    post:
+      operationId: fetchSensorData
+      summary: Fetch sensor data by latitude/longitude
+      description: Submit lat/lon in JSON body; returns NDVI, SRTM, VV, etc.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lat
+                - lon
+              properties:
+                lat:
+                  type: number
+                  description: Latitude coordinate
+                lon:
+                  type: number
+                  description: Longitude coordinate
+      responses:
+        "200":
+          description: Sensor data response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ndvi:
+                    type: number
+                    description: Normalized Difference Vegetation Index
+                  srtm:
+                    type: number
+                    description: SRTM elevation data
+                  vv:
+                    type: number
+                    description: VV polarization data
+                  vh:
+                    type: number
+                    description: VH polarization data
+                  temperature:
+                    type: number
+                    description: Temperature data
+                  precipitation:
+                    type: number
+                    description: Precipitation data
+                additionalProperties: true
