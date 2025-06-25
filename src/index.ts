@@ -34,7 +34,12 @@ interface ServiceAccountJSON {
 
 // Extract credentials from service account JSON or individual env vars
 function extractCredentials(env: Environment): ServiceAccountJSON {
-  const serviceAccount = JSON.parse(env.SA_PRIVATE_KEY) as ServiceAccountJSON;
+  let serviceAccount: ServiceAccountJSON;
+  try {
+    serviceAccount = JSON.parse(env.SA_PRIVATE_KEY) as ServiceAccountJSON;
+  } catch (error) {
+    throw new Error("Invalid JSON in SA_PRIVATE_KEY environment variable: " + (error instanceof Error ? error.message : String(error)));
+  }
   return serviceAccount;
 }
 
