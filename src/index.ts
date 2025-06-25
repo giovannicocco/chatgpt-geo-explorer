@@ -1,17 +1,13 @@
 // Cloudflare Worker: Fetch Google Earth Engine sensor data by lat/lon
-// Requires: npm install jose
+// Requires: npm install @google/earthengine
 
-import { importPKCS8, SignJWT } from 'jose';
+import ee from '@google/earthengine';
 
 // Environment bindings (set via Wrangler secrets or env vars):
-// - SA_PRIVATE_KEY: Complete service account JSON or just the private key
-// - EE_PROJECT: (optional) GCP project for Earth Engine - will be extracted from JSON if not provided
-// - SA_CLIENT_EMAIL: (optional) service account email - will be extracted from JSON if not provided
+// - SA_PRIVATE_KEY: Full service account JSON used to authenticate with Earth Engine
 
 interface Environment {
-  EE_PROJECT?: string;
-  SA_CLIENT_EMAIL?: string;
-  SA_PRIVATE_KEY: string; // Can be JSON string or just the private key
+  SA_PRIVATE_KEY: string; // Service account JSON
 }
 
 interface EarthEngineGeometry {
@@ -30,12 +26,6 @@ interface EarthEngineRequestBody {
   format: string;
 }
 
-interface GoogleOAuthTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-}
-
 interface ServiceAccountJSON {
   client_email: string;
   private_key: string;
@@ -43,26 +33,14 @@ interface ServiceAccountJSON {
 }
 
 // Extract credentials from service account JSON or individual env vars
-function extractCredentials(env: Environment): { clientEmail: string; privateKey: string; projectId: string } {
+function extractCredentials(env: Environment): ServiceAccountJSON {
+  let serviceAccount: ServiceAccountJSON;
   try {
-    // Try to parse SA_PRIVATE_KEY as JSON first
-    const serviceAccount = JSON.parse(env.SA_PRIVATE_KEY) as ServiceAccountJSON;
-    return {
-      clientEmail: serviceAccount.client_email,
-      privateKey: serviceAccount.private_key,
-      projectId: serviceAccount.project_id
-    };
-  } catch (e) {
-    // If parsing fails, assume SA_PRIVATE_KEY is just the private key
-    if (!env.SA_CLIENT_EMAIL || !env.EE_PROJECT) {
-      throw new Error('SA_CLIENT_EMAIL and EE_PROJECT are required when SA_PRIVATE_KEY is not a JSON');
-    }
-    return {
-      clientEmail: env.SA_CLIENT_EMAIL,
-      privateKey: env.SA_PRIVATE_KEY,
-      projectId: env.EE_PROJECT
-    };
+    serviceAccount = JSON.parse(env.SA_PRIVATE_KEY) as ServiceAccountJSON;
+  } catch (error) {
+    throw new Error("Invalid JSON in SA_PRIVATE_KEY environment variable: " + (error instanceof Error ? error.message : String(error)));
   }
+  return serviceAccount;
 }
 
 export default {
@@ -97,11 +75,11 @@ export default {
         return new Response(JSON.stringify({ error: 'Invalid lat/lon values' }), { status: 400 });
       }
 
-      // Extract credentials from service account JSON or use individual env vars
-      const { clientEmail, privateKey, projectId } = extractCredentials(env);
-
-      // Authenticate and get access token
-      const token = await getAccessToken(clientEmail, privateKey);
+      // Extract credentials and authenticate using the Earth Engine client
+      const serviceAccount = extractCredentials(env);
+      await authenticateEE(serviceAccount);
+      const token = ee.data.getAuthToken();
+      const projectId = serviceAccount.project_id;
 
       // Build request body for EE
       const geometry: EarthEngineGeometry = {
@@ -126,7 +104,7 @@ export default {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
+            Authorization: token || ''
           },
           body: JSON.stringify(eeRequestBody)
         }
@@ -149,36 +127,11 @@ export default {
   }
 };
 
-// Generate OAuth2 JWT Bearer and fetch access token
-async function getAccessToken(clientEmail: string, privateKey: string): Promise<string> {
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + 3600; // 1h expiration
-  const privateKeyImported = await importPKCS8(privateKey, 'RS256');
-
-  const jwt = await new SignJWT({
-    iss: clientEmail,
-    sub: clientEmail,
-    aud: 'https://oauth2.googleapis.com/token',
-    iat,
-    exp,
-    scope: 'https://www.googleapis.com/auth/earthengine.readonly'
-  })
-    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
-    .sign(privateKeyImported);
-
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt
-    })
+// Authenticate the Earth Engine client library with a service account key
+function authenticateEE(privateKey: ServiceAccountJSON): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ee.data.authenticateViaPrivateKey(privateKey, () => {
+      ee.initialize(null, null, resolve, reject);
+    }, reject);
   });
-
-  if (!tokenRes.ok) {
-    throw new Error('Failed to obtain access token');
-  }
-
-  const tokenData = await tokenRes.json() as GoogleOAuthTokenResponse;
-  return tokenData.access_token;
 }
