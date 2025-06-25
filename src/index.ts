@@ -1,7 +1,7 @@
 // Cloudflare Worker: Fetch Google Earth Engine sensor data by lat/lon
-// Requires: npm install @google/earthengine
+// Requires: npm install jose
 
-import ee from '@google/earthengine';
+import { importPKCS8, SignJWT } from 'jose';
 
 // Environment bindings (set via Wrangler secrets or env vars):
 // - SA_PRIVATE_KEY: Full service account JSON used to authenticate with Earth Engine
@@ -10,20 +10,14 @@ interface Environment {
   SA_PRIVATE_KEY: string; // Service account JSON
 }
 
-interface EarthEngineGeometry {
-  type: 'Point';
-  coordinates: [number, number];
+interface EarthEngineRequestBody {
+  expression: object; // Earth Engine expression object
 }
 
-interface EarthEngineRequestBody {
-  expression: {
-    function: string;
-    arguments: {
-      geometry: EarthEngineGeometry;
-      sensors: string[];
-    };
-  };
-  format: string;
+interface GoogleOAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
 }
 
 interface ServiceAccountJSON {
@@ -75,36 +69,51 @@ export default {
         return new Response(JSON.stringify({ error: 'Invalid lat/lon values' }), { status: 400 });
       }
 
-      // Extract credentials and authenticate using the Earth Engine client
+      // Authenticate using service account credentials (REST API approach)
       const serviceAccount = extractCredentials(env);
-      await authenticateEE(serviceAccount);
-      const token = ee.data.getAuthToken();
+      const token = await authenticateViaPrivateKey(serviceAccount);
       const projectId = serviceAccount.project_id;
 
-      // Build request body for EE
-      const geometry: EarthEngineGeometry = {
-        type: 'Point',
-        coordinates: [lon, lat]
-      };
+      // Build Earth Engine expression to get NDVI pixel value at coordinates
       const eeRequestBody: EarthEngineRequestBody = {
         expression: {
-          function: 'ANALYZE_SENSOR_DATA',
-          arguments: {
-            geometry,
-            sensors: ['NDVI', 'SRTM', 'VV']
-          }
-        },
-        format: 'json'
+          values: {
+            "1": {
+              functionInvocationValue: {
+                functionName: 'Image.load',
+                arguments: {
+                  id: {
+                    constantValue: 'MODIS/006/MOD13A1/2023_01_01'
+                  }
+                }
+              }
+            },
+            "2": {
+              functionInvocationValue: {
+                functionName: 'Image.select',
+                arguments: {
+                  input: {
+                    valueReference: "1"
+                  },
+                  bandSelectors: {
+                    constantValue: ['NDVI']
+                  }
+                }
+              }
+            }
+          },
+          result: "2"
+        }
       };
 
-      // Call Earth Engine compute endpoint
+      // Call Earth Engine value:compute endpoint
       const eeRes = await fetch(
         `https://earthengine.googleapis.com/v1/projects/${projectId}/value:compute`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: token || ''
+            Authorization: `Bearer ${token}`
           },
           body: JSON.stringify(eeRequestBody)
         }
@@ -114,9 +123,10 @@ export default {
         const err = await eeRes.text();
         return new Response(JSON.stringify({ error: 'EE compute failed', details: err }), { status: 502 });
       }
-      const data = await eeRes.json();
+      const data = await eeRes.json() as { result: object };
 
-      return new Response(JSON.stringify(data), {
+      // Extract the result from Earth Engine response
+      return new Response(JSON.stringify(data.result), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -127,11 +137,37 @@ export default {
   }
 };
 
-// Authenticate the Earth Engine client library with a service account key
-function authenticateEE(privateKey: ServiceAccountJSON): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ee.data.authenticateViaPrivateKey(privateKey, () => {
-      ee.initialize(null, null, resolve, reject);
-    }, reject);
+// Authenticate using service account private key (REST API approach)
+async function authenticateViaPrivateKey(serviceAccount: ServiceAccountJSON): Promise<string> {
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + 3600; // 1h expiration
+  const privateKeyImported = await importPKCS8(serviceAccount.private_key, 'RS256');
+
+  const jwt = await new SignJWT({
+    iss: serviceAccount.client_email,
+    sub: serviceAccount.client_email,
+    aud: 'https://oauth2.googleapis.com/token',
+    iat,
+    exp,
+    scope: 'https://www.googleapis.com/auth/earthengine.readonly'
+  })
+    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+    .sign(privateKeyImported);
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt
+    })
   });
+
+  if (!tokenRes.ok) {
+    const errorText = await tokenRes.text();
+    throw new Error(`Authentication error: ${errorText}`);
+  }
+
+  const tokenData = await tokenRes.json() as GoogleOAuthTokenResponse;
+  return tokenData.access_token;
 }
