@@ -1,24 +1,33 @@
-import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
-import worker from '../src/index';
+import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 
-// For now, you'll need to do something like this to get a correctly-typed
-// `Request` to pass to `worker.fetch()`.
+// Mock the Earth Engine client library to avoid Node/browser differences during tests.
+vi.mock('@google/earthengine', () => ({
+  default: {
+    data: {
+      authenticateViaPrivateKey: (_key: unknown, success: () => void) => success(),
+      getAuthToken: () => 'Bearer test-token'
+    },
+    initialize: (_a: unknown, _b: unknown, success: () => void) => success()
+  }
+}));
+
+let worker: typeof import('../src/index').default;
+
+beforeAll(async () => {
+  (globalThis as any).window = {};
+  const mod = await import('../src/index');
+  worker = mod.default;
+});
+
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
-describe('Hello World worker', () => {
-	it('responds with Hello World! (unit style)', async () => {
-		const request = new IncomingRequest('http://example.com');
-		// Create an empty context to pass to `worker.fetch()`.
-		const ctx = createExecutionContext();
-		const response = await worker.fetch(request, env, ctx);
-		// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
-		await waitOnExecutionContext(ctx);
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
-
-	it('responds with Hello World! (integration style)', async () => {
-		const response = await SELF.fetch('https://example.com');
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
+describe('geo-explorer worker', () => {
+  it('returns 405 for GET requests', async () => {
+    const request = new IncomingRequest('http://example.com');
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, env, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(405);
+  });
 });
