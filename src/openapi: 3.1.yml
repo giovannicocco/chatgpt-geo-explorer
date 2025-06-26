@@ -6,51 +6,194 @@ info:
 servers:
   - url: https://geo-explorer.heg-business.workers.dev
 paths:
-  /sensor-data:
+  /sensor:
     post:
       operationId: fetchSensorData
-      summary: Fetch sensor data by latitude/longitude
-      description: Submit lat/lon in JSON body; returns NDVI, SRTM, VV, etc.
+      summary: Fetch multi-sensor geospatial data by coordinates
+      description: Submit lat/lon coordinates to retrieve data from 7 Earth observation datasets (MODIS, Sentinel-1/2, SRTM, MapBiomas, GEDI, Global Forest). Optional scale parameter overrides default resolutions. Returns metadata for each dataset with individual success/error status.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - lat
-                - lon
-              properties:
-                lat:
-                  type: number
-                  description: Latitude coordinate
-                lon:
-                  type: number
-                  description: Longitude coordinate
+              $ref: '#/components/schemas/SensorDataRequest'
       responses:
         "200":
-          description: Sensor data response
+          description: Multi-sensor geospatial data response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MultiSensorResponse'
+        "400":
+          description: Bad request - invalid parameters
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  ndvi:
-                    type: number
-                    description: Normalized Difference Vegetation Index
-                  srtm:
-                    type: number
-                    description: SRTM elevation data
-                  vv:
-                    type: number
-                    description: VV polarization data
-                  vh:
-                    type: number
-                    description: VH polarization data
-                  temperature:
-                    type: number
-                    description: Temperature data
-                  precipitation:
-                    type: number
-                    description: Precipitation data
-                additionalProperties: true
+                  error:
+                    type: string
+                    description: Error message
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Error message
+
+components:
+  schemas:
+    DatasetResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+          description: Dataset processing status
+        id:
+          type: string
+          description: Google Earth Engine dataset ID
+        type:
+          type: string
+          enum: [image, collection]
+          description: Dataset type
+        bands:
+          type: array
+          items:
+            type: string
+          description: Selected bands from the dataset
+        scale:
+          type: number
+          description: Effective scale used for this dataset
+        defaultScale:
+          type: number
+          description: Default scale for this dataset
+        sceneId:
+          type: string
+          description: Scene ID for Sentinel datasets (when available)
+        data:
+          type: object
+          description: Earth Engine image metadata and properties (when status is success)
+        error:
+          type: string
+          description: Error details (when status is error)
+      example:
+        status: "success"
+        id: "MODIS/006/MOD13Q1"
+        type: "collection"
+        bands: ["NDVI", "EVI"]
+        scale: 463.3
+        defaultScale: 463.3
+        data:
+          type: "Image"
+          properties:
+            system:time_start: 1000000000000
+            system:version: "1.0"
+
+    SensorDataRequest:
+      type: object
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: Latitude coordinate
+          example: -2.8
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+          description: Longitude coordinate
+          example: -60.3
+        scale:
+          type: number
+          minimum: 1
+          maximum: 10000
+          description: Custom resolution scale in meters (optional)
+          example: 100
+      required:
+        - lat
+        - lon
+
+    MultiSensorResponse:
+      type: object
+      properties:
+        coordinates:
+          type: object
+          properties:
+            lat:
+              type: number
+            lon:
+              type: number
+        scale:
+          type: object
+          properties:
+            requested:
+              type: number
+              nullable: true
+            note:
+              type: string
+        datasets:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DatasetResponse'
+        timestamp:
+          type: string
+          format: date-time
+      example:
+        coordinates:
+          lat: -2.8
+          lon: -60.3
+        scale:
+          requested: null
+          note: "Using default scales for each dataset"
+        datasets:
+          "MODIS Vegetation Indices":
+            status: "success"
+            id: "MODIS/006/MOD13Q1"
+            type: "collection"
+            bands: ["NDVI", "EVI"]
+            scale: 463.3
+            defaultScale: 463.3
+            data:
+              type: "Image"
+              properties:
+                system:time_start: 1000000000000
+          "Sentinel-2 Surface Reflectance":
+            status: "success"
+            id: "COPERNICUS/S2_SR"
+            type: "collection"
+            bands: ["B4", "B8"]
+            scale: 10
+            defaultScale: 10
+            sceneId: "20170328T083601_20170328T084228_T35RNK"
+            data:
+              type: "Image"
+              properties:
+                CLOUD_COVERAGE_ASSESSMENT: 15.2
+          "Sentinel-1 SAR":
+            status: "success"
+            id: "COPERNICUS/S1_GRD"
+            type: "collection"
+            bands: ["HH", "HV"]
+            scale: 25
+            defaultScale: 25
+            sceneId: "S1A_EW_GRDH_1SDH_20141003T003636_20141003T003740_002658_002F54_ECFA"
+            data:
+              type: "Image"
+              properties:
+                orbitProperties_pass: "DESCENDING"
+          "SRTM Digital Elevation":
+            status: "success"
+            id: "USGS/SRTMGL1_003"
+            type: "image"
+            bands: ["elevation"]
+            scale: 30
+            defaultScale: 30
+            data:
+              type: "Image"
+        timestamp: "2024-01-15T10:30:00.000Z"

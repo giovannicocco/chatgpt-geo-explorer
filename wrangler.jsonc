@@ -27,6 +27,15 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
+	/**
+	 * Environment Variables for Google Earth Engine Authentication
+	 * Set these as secrets in your Cloudflare Workers dashboard:
+	 * 
+	 * wrangler secret put GEE_SERVICE_ACCOUNT_EMAIL
+	 * wrangler secret put GEE_PRIVATE_KEY
+	 * 
+	 * These credentials are required for OAuth2 JWT authentication with Earth Engine API
+	 */
 	// "vars": { "MY_VARIABLE": "production_value" },
 	/**
 	 * Note: Use secrets to store sensitive data.
