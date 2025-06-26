@@ -19,7 +19,7 @@ A Cloudflare Worker that integrates with Google Earth Engine REST API to fetch m
 ### Sensor Data Request (Default Resolutions)
 
 ```bash
-curl -X POST https://geo-explorer.heg-business.workers.dev/sensor \
+curl -X POST https://api.giovannicocco.com.br/sensor \
   -H "Content-Type: application/json" \
   -d '{"lat": -2.8, "lon": -60.3}'
 ```
@@ -27,17 +27,9 @@ curl -X POST https://geo-explorer.heg-business.workers.dev/sensor \
 ### Custom Resolution Request
 
 ```bash
-curl -X POST https://geo-explorer.heg-business.workers.dev/sensor \
+curl -X POST https://api.giovannicocco.com.br/sensor \
   -H "Content-Type: application/json" \
   -d '{"lat": -2.8, "lon": -60.3, "scale": 50}'
-```
-
-### Image Visualization Request
-
-```bash
-curl -X POST https://geo-explorer.heg-business.workers.dev/image \
-  -H "Content-Type: application/json" \
-  -d '{"lat": -2.8, "lon": -60.3, "dataset": "Sentinel-2 Surface Reflectance", "width": 512, "height": 512}'
 ```
 
 ## 📋 Response Formats
@@ -81,37 +73,6 @@ The `/sensor` endpoint returns detailed sensor data from all datasets:
       "timestamp": "2024-01-15T10:30:00Z"
     }
   ]
-}
-```
-
-### Image Visualization Response
-
-The `/image` endpoint returns visualization metadata and parameters for satellite imagery:
-
-```json
-{
-  "coordinates": {
-    "lat": -2.8,
-    "lon": -60.3
-  },
-  "imageData": {
-    "dataset": "Sentinel-2 Surface Reflectance",
-    "imageUrl": "Earth Engine thumbnail for Sentinel-2 Surface Reflectance at -2.8, -60.3",
-    "width": 512,
-    "height": 512,
-    "visualization": {
-      "bands": ["B4", "B3", "B2"],
-      "min": 500,
-      "max": 2500,
-      "type": "RGB"
-    },
-    "timestamp": "2024-01-15T10:30:00Z"
-  },
-  "region": [
-    [[-60.309, -2.809], [-60.291, -2.809], [-60.291, -2.791], [-60.309, -2.791], [-60.309, -2.809]]
-  ],
-  "year": 2023,
-  "status": "metadata_ready"
 }
 ```
 
@@ -188,18 +149,6 @@ Provides quantitative data from multiple Earth observation datasets:
    - Wall-to-wall forest height estimates
    - Global forest monitoring
 
-### Image Visualization Endpoint (`/image`)
-
-Generates visualization URLs for satellite imagery with dataset-specific parameters:
-
-- **Sentinel-2**: True color (RGB) and false color (NIR) compositions
-- **SRTM**: Terrain elevation visualization with color ramps
-- **MODIS**: NDVI vegetation index visualization
-- **Global Forest Height**: Forest height color mapping
-- **MapBiomas**: Land use classification colors
-
-Each visualization is optimized for archaeological and environmental analysis.
-
 ## 📖 Parameters
 
 ### Sensor Data Endpoint (`/sensor`)
@@ -207,16 +156,6 @@ Each visualization is optimized for archaeological and environmental analysis.
 - **lat** (required): Latitude coordinate (-90 to 90)
 - **lon** (required): Longitude coordinate (-180 to 180)  
 - **scale** (optional): Custom resolution in meters (1-10000)
-
-### Image Visualization Endpoint (`/image`)
-
-- **lat** (required): Latitude coordinate (-90 to 90)
-- **lon** (required): Longitude coordinate (-180 to 180)
-- **dataset** (required): Dataset name (e.g., "Sentinel-2 Surface Reflectance")
-- **width** (optional): Image width in pixels (default: 512)
-- **height** (optional): Image height in pixels (default: 512)
-- **year** (optional): Year for temporal filtering (default: 2023)
-- **scale** (optional): Custom resolution in meters
 
 ## 🆔 Scene IDs
 

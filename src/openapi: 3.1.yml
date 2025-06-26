@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: API for fetching geospatial sensor data including NDVI, SRTM, and satellite data.
 servers:
-  - url: https://geo-explorer.heg-business.workers.dev
+  - url: https://api.giovannicocco.com.br
 paths:
   /sensor:
     post:
